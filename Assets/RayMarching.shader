@@ -31,17 +31,23 @@ Shader "Hidden/RayMarching"
             };
 
             // Ray Marching Variables
-            #define MAX_STEPS 500       // No. steps a ray can take - see far side details of hollow structures
-            #define MAX_DIST 1000.0     // Max distance of ray
-            #define SURFACE_DIST 0.001  // Distance threshold for surface detection
+            #define MAX_STEPS 400       // No. steps a ray can take - see far side details of hollow structures
+            #define MAX_DIST 100.0     // Max distance of ray
+            #define SURFACE_DIST 0.01  // Distance threshold for surface detection
 
             // Mandelbulb Variables
             #define ITERATIONS 100      // How detailed 
             #define BAILOUT 2
             #define POWER 8
 
+            float2x2 Rotate(float a) {
+                float s = sin(a);
+                float c = cos(a);
+                return float2x2(c, -s, s, c);
+            }
 
-            float DE(float3 pos) {
+            // return distance to set on x, return colour on y
+            float2 DE(float3 pos) {
                 float3 z = pos;
                 float dr = 1.0;
                 float r = 0.0;
@@ -64,28 +70,33 @@ Shader "Hidden/RayMarching"
                     z = zr*float3(sin(theta)*cos(phi), clamp(sin(phi)*sin(theta), -1.0, 0.5*sin(4.3*_Time.y)+0.5), cos(theta));
                     z+=pos;
                 }
-                return 0.5*log(r)*r/dr;
+                return float2(0.5*log(r)*r/dr, i/ITERATIONS);
             }
 
-            float GetDist(float3 p) {
-                float4 sphere = float4(0, 1, 2.5, 1);
-                float4 mandelbulb = float4(0, 1, 2.5, 1);
+            // x coord is dist, y coord is colour value (based on object properties)
+            float2 GetDistCol(float3 p) {
+                // float4 sphere = float4(0, 1, 2.5, 1);
+                float3 mandelbulb = p - float3(0, 1, 2.5);
 
-                float sphereDist = length(p - sphere.xyz) - sphere.w;
-                float planeDist = p.y;
+                mandelbulb.xz = mul(mandelbulb.xz, Rotate(_Time.y));  // Rotate around y-axis
 
-                float mandelbulbDist = DE(p - mandelbulb.xyz);
+                // float sphereDist = length(p - sphere.xyz) - sphere.w;
+                // float planeDist = p.y;
 
-                float d = min(mandelbulbDist, planeDist);
-                return d;
+                float2 mandelbulbDist = DE(mandelbulb);
+
+                // float d = min(mandelbulbDist.x, planeDist);
+
+                return mandelbulbDist;
+                // return float2(d, mandelbulbDist.y);
             }
 
-
-            float RayMarch(float3 ro, float3 rd) {
+            // x coord is dist, y coord is colour value (based on object properties)
+            float2 RayMarch(float3 ro, float3 rd) {
                 float d0 = 0.0;
                 for (int i = 0; i < MAX_STEPS; i++) {
                     float3 p = ro+d0*rd;
-                    float dS = GetDist(p);  // distance to scene
+                    float dS = GetDistCol(p);  // distance to scene
                     d0 += dS;
                     if (dS<SURFACE_DIST || d0>MAX_DIST) break;
                 }
@@ -93,15 +104,16 @@ Shader "Hidden/RayMarching"
             }
 
             float3 GetNormal(float3 p) {
-                float d = GetDist(p);
+                float d = GetDistCol(p);
                 float2 e = float2(0.001, 0.0);
                 float3 n = d - float3(
-                    GetDist(p-e.xyy),
-                    GetDist(p-e.yxy),
-                    GetDist(p-e.yyx));
+                    GetDistCol(p-e.xyy).x,
+                    GetDistCol(p-e.yxy).x,
+                    GetDistCol(p-e.yyx).x);
                 return normalize(n);
             }
 
+            // point, lightPosition, normal at point
             float GetLight(float3 p, float3 lightPos) {
                 // float3 lightPos = float3(0.0, 8.0, 0.0);
                 // lightPos.xz += float2(_SinTime.w, _CosTime.w) * 2.0;
@@ -109,7 +121,7 @@ Shader "Hidden/RayMarching"
                 float3 n = GetNormal(p);
 
                 float dif = clamp(dot(n, l), 0.0, 1.0);
-                float d = RayMarch(p+n*SURFACE_DIST*2.0, l); // ensure point doesn't start on object
+                float d = RayMarch(p+n*SURFACE_DIST*2.0, l).x; // ensure point doesn't start on object
                 if (d<length(lightPos - p)) dif *= 0.7;  // add some base ambient light
 
                 return dif;
@@ -135,20 +147,17 @@ Shader "Hidden/RayMarching"
             {
                 float2 uv = f.uv * 2.0 - 1.0;
 
-                // float3 camera_pos = float3(0.0, 1.0, 0.0);
-                float3 camera_pos = float3(-2.0*_SinTime.w, 1.0, 2.5-2.5*_CosTime.w);  // ROTATE
+                float3 camera_pos = float3(0.0, 1.0, 0.0);
 
                 float3 ro = camera_pos;
-                // float3 rd = float3(uv, 1.0); //kind of like fov
+                float3 rd = float3(uv, 1.0); //kind of like fov
 
-                // ROTATE
-                float3 cosss = float3(uv.x, uv.y, 1.0)*_CosTime.w;
-                float3 kcrossuv = float3(1.0, 0.0, -uv.x)*_SinTime.w;
-                float3 third = float3(0.0, uv.y, 0.0) - float3(0.0, uv.y, 0.0)*_CosTime.w;
-                float3 rd = cosss + kcrossuv + third;
+
                 
                 // Raymarch to objects
-                float3 dist = RayMarch(ro, rd);
+                float2 distCol = RayMarch(ro, rd);
+                float dist = distCol.x;
+                float colInd = distCol.y;
                 float3 p = ro + rd * dist;
                 
                 // light sources
@@ -157,17 +166,19 @@ Shader "Hidden/RayMarching"
                 float dif = 0.5*dif1 + 0.5*dif2;  // add lights together
 
                 // far distances are reduced to 0
-                float fog = 1.0 / (1.0 + dist * dist * dist * 0.01);
+                // float fog = 1.0 / (1.0 + dist * dist * dist * 0.01);
                 // dif *= fog;
 
 
                 // Add colours
-                float mult = 1.3;
+ 
 
                 // float3 col = float3(sin(dif*mult)*0.5 + 0.5, sin(dif*mult * 1.4)*0.5 + 0.5, sin(dif*mult* 0.8)*0.5 + 0.5);
                 // float3 col = float3(dif, dif, dif);
+                // float3 col = float3(1.0, 0.7, 0.05) * dif;
 
-                float3 col = palette(dif, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 0.5), float3(0.80, 0.90, 0.30)) * fog;
+                // float3 col = palette(uv.y*sin(_Time.y)*0.5+0.5, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 1.0), float3(0.00, 0.33, 0.67)) * fog * dif;
+                float3 col = palette(colInd*uv.y*sin(_Time.y)*0.5+0.5, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 1.0), float3(0.00, 0.33, 0.67)) * dif;
                 
 
                 return float4(col, 1.0);

@@ -102,8 +102,8 @@ Shader "Hidden/RayMarching"
                 return normalize(n);
             }
 
-            float GetLight(float3 p) {
-                float3 lightPos = float3(0.0, 8.0, 0.0);
+            float GetLight(float3 p, float3 lightPos) {
+                // float3 lightPos = float3(0.0, 8.0, 0.0);
                 // lightPos.xz += float2(_SinTime.w, _CosTime.w) * 2.0;
                 float3 l = normalize(lightPos - p);
                 float3 n = GetNormal(p);
@@ -113,6 +113,11 @@ Shader "Hidden/RayMarching"
                 if (d<length(lightPos - p)) dif *= 0.7;  // add some base ambient light
 
                 return dif;
+            }
+
+            // Color palette: https://www.iquilezles.org/www/articles/palettes/palettes.htm
+            float3 palette(float t, float3 a, float3 b, float3 c, float3 d) {
+                return a + b*cos(6.28318*(c*t+d) );     // 2pi
             }
 
             v2f vert (appdata v)
@@ -142,20 +147,28 @@ Shader "Hidden/RayMarching"
                 float3 third = float3(0.0, uv.y, 0.0) - float3(0.0, uv.y, 0.0)*_CosTime.w;
                 float3 rd = cosss + kcrossuv + third;
                 
-
+                // Raymarch to objects
                 float3 dist = RayMarch(ro, rd);
-
                 float3 p = ro + rd * dist;
+                
+                // light sources
+                float dif1 = GetLight(p, float3(0.0, 8.0, 0.0)); // diffuse light
+                float dif2 = GetLight(p, float3(-3.0, 5.0, 1.0));
+                float dif = 0.5*dif1 + 0.5*dif2;  // add lights together
 
-                float dif = GetLight(p); // diffuse light
+                // far distances are reduced to 0
+                float fog = 1.0 / (1.0 + dist * dist * dist * 0.01);
+                // dif *= fog;
 
 
                 // Add colours
                 float mult = 1.3;
 
-                float3 col = float3(sin(dif*mult)*0.5 + 0.5, sin(dif*mult * 1.4)*0.5 + 0.5, sin(dif*mult* 0.8)*0.5 + 0.5);
+                // float3 col = float3(sin(dif*mult)*0.5 + 0.5, sin(dif*mult * 1.4)*0.5 + 0.5, sin(dif*mult* 0.8)*0.5 + 0.5);
+                // float3 col = float3(dif, dif, dif);
 
-                // float3 col = sin(float3(0.3, 0.45, 0.65))
+                float3 col = palette(dif, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 0.5), float3(0.80, 0.90, 0.30)) * fog;
+                
 
                 return float4(col, 1.0);
             }

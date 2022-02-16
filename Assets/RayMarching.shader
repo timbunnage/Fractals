@@ -40,6 +40,11 @@ Shader "Hidden/RayMarching"
             #define BAILOUT 2
             #define POWER 8
 
+            float2x2 Rotate(float a) {
+                float s = sin(a);
+                float c = cos(a);
+                return float2x2(c, -s, s, c);
+            }
 
             float DE(float3 pos) {
                 float3 z = pos;
@@ -69,12 +74,13 @@ Shader "Hidden/RayMarching"
 
             float GetDist(float3 p) {
                 float4 sphere = float4(0, 1, 2.5, 1);
-                float4 mandelbulb = float4(0, 1, 2.5, 1);
+                float3 mandelbulb = p - float3(0, 1, 2.5);
+                mandelbulb.xz = mul(mandelbulb.xz, Rotate(_Time.y));  // Rotate around y-axis
 
                 float sphereDist = length(p - sphere.xyz) - sphere.w;
                 float planeDist = p.y;
 
-                float mandelbulbDist = DE(p - mandelbulb.xyz);
+                float mandelbulbDist = DE(mandelbulb.xyz);
 
                 float d = min(mandelbulbDist, planeDist);
                 return d;
@@ -135,17 +141,17 @@ Shader "Hidden/RayMarching"
             {
                 float2 uv = f.uv * 2.0 - 1.0;
 
-                // float3 camera_pos = float3(0.0, 1.0, 0.0);
-                float3 camera_pos = float3(-2.0*_SinTime.w, 1.0, 2.5-2.5*_CosTime.w);  // ROTATE
+                float3 camera_pos = float3(0.0, 1.0, 0.0);
+                // float3 camera_pos = float3(-2.0*_SinTime.w, 1.0, 2.5-2.5*_CosTime.w);  // ROTATE
 
                 float3 ro = camera_pos;
-                // float3 rd = float3(uv, 1.0); //kind of like fov
+                float3 rd = float3(uv, 1.0); //kind of like fov
 
                 // ROTATE
-                float3 cosss = float3(uv.x, uv.y, 1.0)*_CosTime.w;
-                float3 kcrossuv = float3(1.0, 0.0, -uv.x)*_SinTime.w;
-                float3 third = float3(0.0, uv.y, 0.0) - float3(0.0, uv.y, 0.0)*_CosTime.w;
-                float3 rd = cosss + kcrossuv + third;
+                // float3 cosss = float3(uv.x, uv.y, 1.0)*_CosTime.w;
+                // float3 kcrossuv = float3(1.0, 0.0, -uv.x)*_SinTime.w;
+                // float3 third = float3(0.0, uv.y, 0.0) - float3(0.0, uv.y, 0.0)*_CosTime.w;
+                // float3 rd = cosss + kcrossuv + third;
                 
                 // Raymarch to objects
                 float3 dist = RayMarch(ro, rd);

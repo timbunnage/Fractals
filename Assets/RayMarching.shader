@@ -46,10 +46,14 @@ Shader "Hidden/RayMarching"
                 return float2x2(c, -s, s, c);
             }
 
-            float DE(float3 pos) {
+            float DE(float3 pos, out float resColor) {
                 float3 z = pos;
                 float dr = 1.0;
                 float r = 0.0;
+
+                // orbit trap for colour
+                float trap = length(z);
+
                 for (int i = 0; i < ITERATIONS ; i++) {
                     r = length(z);
                     if (r>BAILOUT) break;
@@ -68,11 +72,16 @@ Shader "Hidden/RayMarching"
                     // z = zr*float3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
                     z = zr*float3(sin(theta)*cos(phi), clamp(sin(phi)*sin(theta), -1.0, 0.5*sin(4.3*_Time.y)+0.5), cos(theta));
                     z+=pos;
+
+                    // trap = min(trap, float4(abs(z), m));
+                    trap = min(trap, length(z));
                 }
+                resColor = trap;
+
                 return 0.5*log(r)*r/dr;
             }
 
-            float GetDist(float3 p) {
+            float GetDist(float3 p, out float resColor) {
                 float4 sphere = float4(0, 1, 2.5, 1);
                 float3 mandelbulb = p - float3(0, 1, 2.5);
                 mandelbulb.xz = mul(mandelbulb.xz, Rotate(_Time.y));  // Rotate around y-axis
@@ -80,18 +89,21 @@ Shader "Hidden/RayMarching"
                 float sphereDist = length(p - sphere.xyz) - sphere.w;
                 float planeDist = p.y;
 
-                float mandelbulbDist = DE(mandelbulb.xyz);
+                float mandelbulbDist = DE(mandelbulb.xyz, resColor);
 
                 float d = min(mandelbulbDist, planeDist);
+
+                if (planeDist < mandelbulbDist) resColor = -1;
+
                 return d;
             }
 
 
-            float RayMarch(float3 ro, float3 rd) {
+            float RayMarch(float3 ro, float3 rd, out float resColor) {
                 float d0 = 0.0;
                 for (int i = 0; i < MAX_STEPS; i++) {
                     float3 p = ro+d0*rd;
-                    float dS = GetDist(p);  // distance to scene
+                    float dS = GetDist(p, resColor);  // distance to scene
                     d0 += dS;
                     if (dS<SURFACE_DIST || d0>MAX_DIST) break;
                 }
@@ -99,12 +111,13 @@ Shader "Hidden/RayMarching"
             }
 
             float3 GetNormal(float3 p) {
-                float d = GetDist(p);
+                float tmp;
+                float d = GetDist(p, tmp);
                 float2 e = float2(0.001, 0.0);
                 float3 n = d - float3(
-                    GetDist(p-e.xyy),
-                    GetDist(p-e.yxy),
-                    GetDist(p-e.yyx));
+                    GetDist(p-e.xyy, tmp),
+                    GetDist(p-e.yxy, tmp),
+                    GetDist(p-e.yyx, tmp));
                 return normalize(n);
             }
 
@@ -114,8 +127,9 @@ Shader "Hidden/RayMarching"
                 float3 l = normalize(lightPos - p);
                 float3 n = GetNormal(p);
 
-                float dif = clamp(dot(n, l), 0.0, 1.0);
-                float d = RayMarch(p+n*SURFACE_DIST*2.0, l); // ensure point doesn't start on object
+                float tmp;
+                float dif = clamp(dot(n, l), 1.0, 1.0);  // angle between point and light
+                float d = RayMarch(p+n*SURFACE_DIST*2.0, l, tmp); // ensure point doesn't start on object
                 if (d<length(lightPos - p)) dif *= 0.7;  // add some base ambient light
 
                 return dif;
@@ -154,7 +168,8 @@ Shader "Hidden/RayMarching"
                 // float3 rd = cosss + kcrossuv + third;
                 
                 // Raymarch to objects
-                float3 dist = RayMarch(ro, rd);
+                float resColor;
+                float3 dist = RayMarch(ro, rd, resColor);
                 float3 p = ro + rd * dist;
                 
                 // light sources
@@ -172,9 +187,11 @@ Shader "Hidden/RayMarching"
 
                 // float3 col = float3(sin(dif*mult)*0.5 + 0.5, sin(dif*mult * 1.4)*0.5 + 0.5, sin(dif*mult* 0.8)*0.5 + 0.5);
                 // float3 col = float3(dif, dif, dif);
-
-                float3 col = palette(dif, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 0.5), float3(0.80, 0.90, 0.30)) * fog;
                 
+                float3 col = palette(resColor*2 - 1, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 0.5), float3(0.80, 0.90, 0.30)) * fog *dif ;
+
+                // base plane resColor is -1
+                if (resColor == -1) col = float3(113, 60, 76) / 256 * fog * dif;
 
                 return float4(col, 1.0);
             }

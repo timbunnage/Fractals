@@ -4,6 +4,8 @@ Shader "Hidden/RayMarching"
     {
         _MainTex ("Texture", 2D) = "white" {}
         _Area("Area", vector) = (0, 0, 4, 4)
+        _CamPosition("CamPosition", vector)  = (0, 1, 0)
+        _CamRotation("CamRotation", vector) = (0, 0, 0)
     }
     SubShader
     {
@@ -150,16 +152,22 @@ Shader "Hidden/RayMarching"
 
             float4 _Area;
             sampler2D _MainTex;
+            float3 _CamPosition;
+            float3 _CamRotation;
 
             fixed4 frag (v2f f) : SV_Target
             {
-                float2 uv = f.uv * 2.0 - 1.0;
+                float2 uv = _Area.xy + (f.uv - 0.5) * _Area.zw; 
+                // float2 uv = f.uv * 2.0 - 1.0;
 
-                float3 camera_pos = float3(0.0, 1.0, 0.0);
-                // float3 camera_pos = float3(-2.0*_SinTime.w, 1.0, 2.5-2.5*_CosTime.w);  // ROTATE
+                // float3 camera_pos = float3(0.0, 1.0, 0.0);
+                float3 camera_pos = _CamPosition.xyz; 
 
                 float3 ro = camera_pos;
                 float3 rd = float3(uv, 1.0); //kind of like fov
+                // NOTE: Rotation order matters due to Gimbal lock
+                rd.yz = mul(rd.yz, Rotate(-_CamRotation.x)); // Rotate around x
+                rd.xz = mul(rd.xz, Rotate(_CamRotation.y)); // Rotate around y
 
                 // ROTATE
                 // float3 cosss = float3(uv.x, uv.y, 1.0)*_CosTime.w;
@@ -178,7 +186,7 @@ Shader "Hidden/RayMarching"
                 float dif = 0.5*dif1 + 0.5*dif2;  // add lights together
 
                 // far distances are reduced to 0
-                float fog = 1.0 / (1.0 + dist * dist * dist * 0.01);
+                float fog = 1.0 / (1.0 + dist * dist  * 0.005);
                 // dif *= fog;
 
 
@@ -191,7 +199,7 @@ Shader "Hidden/RayMarching"
                 float3 col = palette(resColor*2 - 1, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 0.5), float3(0.80, 0.90, 0.30)) * fog *dif ;
 
                 // base plane resColor is -1
-                if (resColor == -1) col = float3(113, 60, 76) / 256 * fog * dif;
+                if (resColor == -1) col = float3(113, 60, 76) / 256 * fog * dif  + float3(0.8, 0.9, 1.0) * (1-fog) ;
 
                 return float4(col, 1.0);
             }

@@ -74,6 +74,9 @@ Material:
     - _UVSec: 0
     - _ZWrite: 1
     m_Colors:
+    - _Area: {r: 0, g: 0, b: 2, a: 1.435456}
+    - _CamPosition: {r: -2.6652396, g: 1.1028615, b: 1.8476946, a: 0}
+    - _CamRotation: {r: 6.156388, g: 1.3299007, b: -0.000000003755439, a: 0}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

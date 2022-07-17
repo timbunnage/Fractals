@@ -6,6 +6,8 @@ Shader "Hidden/RayMarching"
         _Area("Area", vector) = (0, 0, 4, 4)
         _CamPosition("CamPosition", vector)  = (0, 1, 0)
         _CamRotation("CamRotation", vector) = (0, 0, 0)
+        _LowFreq("LowFreq", vector) = (0, 0, 0, 0)
+        _HighFreq("HighFreq", vector) = (0, 0, 0, 0)
     }
     SubShader
     {
@@ -42,6 +44,9 @@ Shader "Hidden/RayMarching"
             #define BAILOUT 2
             #define POWER 8
 
+            float4 _LowFreq;
+            float4 _HighFreq;
+
             float2x2 Rotate(float a) {
                 float s = sin(a);
                 float c = cos(a);
@@ -71,15 +76,41 @@ Shader "Hidden/RayMarching"
                     phi = phi*POWER;
                     
                     // convert back to cartesian coordinates
-                    // z = zr*float3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
+                    // z = zr*float3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));  // ORIGINAL
                     z = zr*float3(sin(theta)*cos(phi), clamp(sin(phi)*sin(theta), -1.0, 0.5*sin(4.3*_Time.y)+0.5), cos(theta));
+
+
+                    z = zr*float3(sin(theta)*cos(phi), sin(phi)*sin(theta*sin(0.5*_Time.y)), cos(theta*sin(0.5*_Time.y)));
+                    // z = zr*float3(clamp(sin(theta)*cos(phi), -1.0, 0.5*sin(4.3*_Time.y)+0.5), sin(phi)*sin(theta), cos(theta));
+                    // z = zr*float3(sin(theta*sin(4.3*_Time.y))*cos(phi), clamp(sin(phi)*sin(theta), -1.0, 0.5*sin(4.3*_Time.y)+0.5), cos(theta));
+
+                    // mandelbrot if power == 2
+                    // z = zr*float3(cos(theta)*cos(phi), cos(theta)*sin(phi), sin(theta));
+
+                    // z = zr*float3(sin(theta)*cos(phi), sin(phi)*sin(theta*sin(0.5*_Time.y)), cos(theta*sin(0.5*_Time.y)));
+
+
+
+                    float piOverTwo = 1.57079632679;
+
+                    z = zr*float3(
+                        sin(theta + sin(_LowFreq.x * piOverTwo))*cos(phi + sin(_LowFreq.y * piOverTwo)), 
+                        sin(phi + sin(_LowFreq.z * piOverTwo))*sin(theta + sin(_LowFreq.w * piOverTwo)), 
+                        cos(theta + sin(_HighFreq.x * piOverTwo))
+                    );
+
+                    // z = zr*float3(
+                    //     clamp(sin(theta), -1, 0.5*sin(_LowFreq.x)+0.5)  *  clamp(cos(phi), -1, 0.5*sin(_LowFreq.y)+0.5), 
+                    //     clamp(sin(phi), -1, 0.5*sin(_LowFreq.z)+0.5) *  clamp(sin(theta), -1, 0.5*sin(_LowFreq.w)+0.5), 
+                    //     clamp(cos(theta), -1, 0.5*sin(_HighFreq.x)+0.5)
+                    // );
+
                     z+=pos;
 
-                    // trap = min(trap, float4(abs(z), m));
                     trap = min(trap, length(z));
                 }
-                resColor = trap;
-
+                resColor = log(trap);
+                
                 return 0.5*log(r)*r/dr;
             }
 
@@ -155,6 +186,7 @@ Shader "Hidden/RayMarching"
             float3 _CamPosition;
             float3 _CamRotation;
 
+
             fixed4 frag (v2f f) : SV_Target
             {
                 float2 uv = _Area.xy + (f.uv - 0.5) * _Area.zw; 
@@ -165,9 +197,12 @@ Shader "Hidden/RayMarching"
 
                 float3 ro = camera_pos;
                 float3 rd = float3(uv, 1.0); //kind of like fov
+                // slightly high angle
+                rd.y -= 0.18;
+                ro.y += 0.3;
                 // NOTE: Rotation order matters due to Gimbal lock
-                rd.yz = mul(rd.yz, Rotate(-_CamRotation.x)); // Rotate around x
-                rd.xz = mul(rd.xz, Rotate(_CamRotation.y)); // Rotate around y
+                // rd.yz = mul(rd.yz, Rotate(-_CamRotation.x)); // Mouse rotate around x
+                // rd.xz = mul(rd.xz, Rotate(_CamRotation.y)); // Mouse rotate around y
 
                 // ROTATE
                 // float3 cosss = float3(uv.x, uv.y, 1.0)*_CosTime.w;
@@ -187,7 +222,6 @@ Shader "Hidden/RayMarching"
 
                 // far distances are reduced to 0
                 float fog = 1.0 / (1.0 + dist * dist  * 0.005);
-                // dif *= fog;
 
 
                 // Add colours
@@ -197,9 +231,20 @@ Shader "Hidden/RayMarching"
                 // float3 col = float3(dif, dif, dif);
                 
                 float3 col = palette(resColor*2 - 1, float3(0.5, 0.5, 0.5), float3(0.5, 0.5, 0.5),	float3(1.0, 1.0, 0.5), float3(0.80, 0.90, 0.30)) * fog *dif ;
+                // float3 col = palette(resColor*2 - 1, float3(0.5,0.5,0.5),float3(0.5,0.5,0.5),float3(1.0,1.0,1.0),float3(0.0,0.33,0.67))*dif*dif*dif ;
+                
+
+
+
+                float3 sky = palette( uv.x*0.4 + uv.y*0.1 + 0.15*_Time.y, float3(0.5,1.0,1.0),float3(0.1,0.1,0.2),float3(1.0,1.0,1.0),float3(0.0,0.33,0.67));
+
+                float3 ground = palette( uv.y*0.12  , float3(0.8,0.5,0.8),float3(0.8,0.4,0.8),float3(2.0,1.0,1.0),float3(0.0,0.25,0.25) );
 
                 // base plane resColor is -1
-                if (resColor == -1) col = float3(113, 60, 76) / 256 * fog * dif  + float3(0.8, 0.9, 1.0) * (1-fog) ;
+                if (resColor == -1) col = ground  * fog * dif  +  sky * (1-fog) ;
+                // if (resColor == -1) col = float3(113, 60, 76) / 256 * fog * dif  +  float3(0.8, 0.9, 1.0) * (1-fog) ;
+
+                col*=0.8;
 
                 return float4(col, 1.0);
             }
